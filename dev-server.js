@@ -25,8 +25,6 @@ const server = http.createServer((req, res) => {
   let filePath;
   if (url === '/' || url === '/index.html') {
     filePath = path.join(__dirname, 'content', 'page.html');
-  } else if (url === '/platform-strategy-deck' || url === '/platform-strategy-deck.html') {
-    filePath = path.join(__dirname, 'content', 'platform-strategy-deck.html');
   } else {
     filePath = path.join(__dirname, 'public', url);
   }
