@@ -1,0 +1,49 @@
+{
+  "buildCommand": "node build.js",
+  "outputDirectory": "public",
+  "functions": {
+    "api/page.js": {
+      "includeFiles": "content/**"
+    },
+    "api/admin.js": {
+      "includeFiles": "content/**"
+    },
+    "api/data.js": {
+      "includeFiles": "content/**"
+    },
+    "api/data/download.js": {
+      "maxDuration": 60
+    },
+    "api/data/pages.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/data/pages/:slug/:path*", "destination": "/api/data/pages?slug=:slug&asset=:path*" },
+    { "source": "/data/pages/:slug", "destination": "/api/data/pages?slug=:slug" },
+    { "source": "/admin", "destination": "/api/admin" },
+    { "source": "/data", "destination": "/api/data" },
+    { "source": "/", "destination": "/api/page" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'none'" }
+      ]
+    }
+  ]
+}

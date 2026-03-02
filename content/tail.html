@@ -1,0 +1,520 @@
+<style>
+/* dot-rail styles moved to head.html */
+
+/* Interactive core-duo panels */
+.core-panel { position: relative; }
+.core-panel:hover { border-color: rgba(34,138,102,0.35) !important; }
+.core-panel.panel-open { border-color: rgba(34,138,102,0.4) !important; background: rgba(34,138,102,0.07) !important; }
+.core-panel.panel-open .panel-chevron { transform: rotate(180deg); opacity: 0.7; }
+.panel-expand { will-change: max-height, opacity; }
+</style>
+<!-- SLIDE PROGRESS -->
+<div class="slide-progress" id="slide-progress"></div>
+<div class="dot-rail" id="dot-rail"></div>
+
+
+<!-- SCRIPTS -->
+<script>
+// Lock to landscape on mobile
+try { screen.orientation.lock('landscape').catch(() => {}); } catch(e) {}
+
+
+
+// Nav scroll effect
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 60);
+});
+
+// Reveal on scroll
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      observer.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.15 });
+// Presentation mode: reveal all content immediately
+reveals.forEach(el => el.classList.add('visible'));
+
+// Animate bar charts when visible
+const barObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const bars = e.target.querySelectorAll('.bar-fill');
+      bars.forEach((bar, i) => {
+        setTimeout(() => {
+          bar.style.height = bar.dataset.height + '%';
+        }, i * 100);
+      });
+      barObserver.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+// Presentation mode: animate all bars immediately
+document.querySelectorAll('.bar-fill').forEach(bar => { bar.style.height = bar.dataset.height + '%'; });
+
+// ─── FIXED-CANVAS SCALING ───
+var scaleTimer = null;
+function scaleSlides() {
+  // Skip if user is zoomed in — don't fight native zoom/pan
+  if (window.visualViewport && window.visualViewport.scale > 1.05) return;
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  document.querySelectorAll('.slide > *').forEach(function(el) {
+    el.style.transform = 'scale(' + Math.min(vw / 1600, vh / 900) + ')';
+  });
+}
+// Debounce resize to avoid firing mid-gesture
+window.addEventListener('resize', function() {
+  clearTimeout(scaleTimer);
+  scaleTimer = setTimeout(scaleSlides, 200);
+});
+scaleSlides();
+
+// ─── SLIDE NAVIGATION (keyboard + wheel) ───
+(function() {
+  var sections = Array.from(document.querySelectorAll('.slide'));
+  var progressEl = document.getElementById('slide-progress');
+  var currentIndex = 0;
+  var isNavigating = false;
+  var progressTimeout = null;
+
+  function getCurrentIndex() {
+    var closest = 0;
+    var closestDist = Infinity;
+    sections.forEach(function(sec, i) {
+      var dist = Math.abs(sec.getBoundingClientRect().top);
+      if (dist < closestDist) { closestDist = dist; closest = i; }
+    });
+    return closest;
+  }
+
+  function showProgress(index) {
+    progressEl.textContent = (index + 1) + ' / ' + sections.length;
+    progressEl.classList.add('visible');
+    clearTimeout(progressTimeout);
+    if (window.innerWidth > 1024) {
+      progressTimeout = setTimeout(function() {
+        progressEl.classList.remove('visible');
+      }, 2000);
+    }
+  }
+
+  // Reset native zoom by toggling viewport max-scale
+  function resetNativeZoom() {
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    var orig = meta.content;
+    meta.content = orig + ', maximum-scale=1';
+    setTimeout(function() { meta.content = orig; }, 50);
+  }
+
+  function goTo(index) {
+    if (index < 0) index = 0;
+    if (index >= sections.length) index = sections.length - 1;
+    if (index === currentIndex) return;
+    currentIndex = index;
+    isNavigating = true;
+    showProgress(currentIndex);
+
+    resetNativeZoom();
+    sections[currentIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    sections[currentIndex].querySelectorAll('.reveal').forEach(function(el) { el.classList.add('visible'); });
+
+    setTimeout(function() { isNavigating = false; }, 500);
+  }
+
+  // ── Wheel: free scroll (native), no hijacking ──
+
+  // ── Keyboard navigation ──
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      currentIndex = getCurrentIndex();
+      goTo(currentIndex + 1);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      currentIndex = getCurrentIndex();
+      goTo(currentIndex - 1);
+    }
+  });
+
+  // ── Mobile tap navigation ──
+  // Tap right → next, tap left → prev. Native scroll + zoom just work.
+  var isMobile = window.innerWidth <= 1024;
+  if (isMobile) {
+    var tapStartX = 0;
+    var tapStartY = 0;
+    var touchCount = 0;
+    var lastPinchTime = 0;
+
+    document.addEventListener('touchstart', function(e) {
+      touchCount = e.touches.length;
+      if (touchCount > 1) lastPinchTime = Date.now();
+      tapStartX = e.touches[0].clientX;
+      tapStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', function(e) {
+      // Skip if was multi-touch or recently zoomed
+      if (touchCount > 1) return;
+      if (Date.now() - lastPinchTime < 1000) return;
+      // Ignore interactive elements
+      var tag = e.target.tagName;
+      if (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.target.closest('.slide-fab-sheet') || e.target.closest('.slide-progress')) return;
+      if (e.target.closest('[onclick]') || e.target.closest('.comparison-table')) return;
+
+      var dx = e.changedTouches[0].clientX - tapStartX;
+      var dy = e.changedTouches[0].clientY - tapStartY;
+      // Only navigate on tap, not swipe/scroll
+      if (Math.abs(dx) > 30 || Math.abs(dy) > 30) return;
+
+      e.preventDefault();
+      currentIndex = getCurrentIndex();
+      if (tapStartX > window.innerWidth * 0.35) {
+        goTo(currentIndex + 1);
+      } else {
+        goTo(currentIndex - 1);
+      }
+    });
+  }
+
+  // Sync index on scroll (touch/swipe still uses native snap)
+  var scrollDebounce = null;
+  window.addEventListener('scroll', function() {
+    if (isNavigating) return;
+    clearTimeout(scrollDebounce);
+    scrollDebounce = setTimeout(function() {
+      currentIndex = getCurrentIndex();
+      showProgress(currentIndex);
+    }, 120);
+  }, { passive: true });
+
+  currentIndex = getCurrentIndex();
+  showProgress(currentIndex);
+})();
+
+// ─── DOT RAIL NAVIGATION ───
+(function() {
+  var slides = Array.from(document.querySelectorAll('.slide'));
+  var rail = document.getElementById('dot-rail');
+  if (!rail || !slides.length) return;
+
+/*__SLIDE_GROUPS__*/
+/*__SECTION_NAMES__*/
+
+  var fallbackTitles = { 0: 'BASED' };
+
+  function getTitle(slide, index) {
+    if (fallbackTitles[index]) return fallbackTitles[index];
+    var label = slide.querySelector('.section-label');
+    if (label) return label.textContent.trim();
+    var actTitle = slide.querySelector('.act-title');
+    if (actTitle) return actTitle.textContent.trim();
+    if (slide.querySelector('.cta-section')) return 'Close';
+    return 'Slide ' + (index + 1);
+  }
+
+  function snapNavigate(slide) {
+    slide.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    slide.querySelectorAll('.reveal').forEach(function(el) { el.classList.add('visible'); });
+  }
+
+  // ── Build section list ──
+  var navSections = [];
+  var seenGroups = {};
+  groups.forEach(function(g, i) {
+    if (!seenGroups[g]) {
+      seenGroups[g] = true;
+      var count = groups.filter(function(x) { return x === g; }).length;
+      navSections.push({ group: g, startIndex: i, count: count, name: sectionNames[g] || getTitle(slides[i], i) });
+    }
+  });
+
+  // ── Hover trigger zone (right edge) ──
+  var trigger = document.createElement('div');
+  trigger.className = 'dot-rail-trigger';
+  document.body.appendChild(trigger);
+
+  var railHideTimer = null;
+  function showRail() { clearTimeout(railHideTimer); rail.classList.add('visible'); }
+  function hideRail() {
+    railHideTimer = setTimeout(function() {
+      rail.classList.remove('visible');
+    }, 300);
+  }
+
+  trigger.addEventListener('mouseenter', showRail);
+  trigger.addEventListener('mouseleave', hideRail);
+  rail.addEventListener('mouseenter', function() { clearTimeout(railHideTimer); });
+  rail.addEventListener('mouseleave', hideRail);
+
+  // ── Build section dots (one per section) ──
+  var sectionDots = [];
+  navSections.forEach(function(sec) {
+    var dot = document.createElement('div');
+    dot.className = 'section-dot';
+
+    var label = document.createElement('span');
+    label.className = 'dot-label';
+    label.textContent = sec.name;
+    dot.appendChild(label);
+
+    var pip = document.createElement('div');
+    pip.className = 'dot-pip';
+    dot.appendChild(pip);
+
+    dot.addEventListener('click', function() {
+      snapNavigate(slides[sec.startIndex]);
+    });
+
+    rail.appendChild(dot);
+    sectionDots.push({ el: dot, group: sec.group });
+  });
+
+  // ── Mobile section sheet ──
+  var progressEl = document.getElementById('slide-progress');
+  var sheet = document.createElement('div');
+  sheet.className = 'slide-fab-sheet';
+  document.body.appendChild(sheet);
+
+  var fabItems = [];
+  navSections.forEach(function(sec, si) {
+    if (si > 0) {
+      var sep = document.createElement('div');
+      sep.className = 'fab-sep';
+      sheet.appendChild(sep);
+    }
+    var item = document.createElement('div');
+    item.className = 'fab-item';
+    item.innerHTML = '<span>' + sec.name + '</span><span class="fab-count">' + sec.count + '</span>';
+    item.addEventListener('click', function() {
+      closeFab();
+      snapNavigate(slides[sec.startIndex]);
+    });
+    sheet.appendChild(item);
+    fabItems.push({ el: item, group: sec.group });
+  });
+
+  var fabOpen = false;
+  function openFab() { fabOpen = true; progressEl.classList.add('fab-open'); sheet.classList.add('visible'); }
+  function closeFab() { fabOpen = false; progressEl.classList.remove('fab-open'); sheet.classList.remove('visible'); }
+
+  if (progressEl) {
+    progressEl.addEventListener('click', function(e) {
+      if (window.innerWidth > 1024) return;
+      e.stopPropagation();
+      if (fabOpen) closeFab(); else openFab();
+    });
+  }
+  document.addEventListener('click', function(e) {
+    if (fabOpen && !sheet.contains(e.target) && e.target !== progressEl) closeFab();
+  });
+
+  // ── Sync active section on scroll ──
+  var scrollCloseTimer = null;
+  function updateActive() {
+    var closest = 0;
+    var closestDist = Infinity;
+    slides.forEach(function(s, i) {
+      var dist = Math.abs(s.getBoundingClientRect().top);
+      if (dist < closestDist) { closestDist = dist; closest = i; }
+    });
+    var activeGroup = groups[closest] !== undefined ? groups[closest] : 0;
+    sectionDots.forEach(function(sd) {
+      sd.el.classList.toggle('active', sd.group === activeGroup);
+    });
+    fabItems.forEach(function(fi) {
+      fi.el.classList.toggle('active', fi.group === activeGroup);
+    });
+  }
+
+  window.addEventListener('scroll', function() {
+    updateActive();
+    if (fabOpen) {
+      clearTimeout(scrollCloseTimer);
+      scrollCloseTimer = setTimeout(closeFab, 150);
+    }
+  }, { passive: true });
+  updateActive();
+
+  // ── Toggle interactive core panels ──
+  function scrollPanelIntoView(el) {
+    if (!el) return;
+    setTimeout(function() {
+      var section = el.closest('.section');
+      if (section) {
+        var elRect = el.getBoundingClientRect();
+        var secRect = section.getBoundingClientRect();
+        if (elRect.bottom > secRect.bottom || elRect.top < secRect.top) {
+          el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+      }
+    }, 120);
+  }
+
+  window.toggleCorePanel = function(panel) {
+    var expandEl = document.getElementById("expand-" + panel);
+    var panelEl = document.getElementById("panel-" + panel);
+    if (!expandEl || !panelEl) return;
+    var chevron = document.getElementById("chevron-" + panel);
+    var parent = panelEl.parentElement;
+    if (parent) {
+      var allPanels = parent.querySelectorAll(".core-panel");
+      allPanels.forEach(function(p) {
+        if (p !== panelEl && p.classList.contains("panel-open")) {
+          p.classList.remove("panel-open");
+          var pId = p.id.replace("panel-", "");
+          var pExpand = document.getElementById("expand-" + pId);
+          var pChevron = document.getElementById("chevron-" + pId);
+          if (pExpand) { pExpand.style.maxHeight = "0"; pExpand.style.opacity = "0"; }
+          if (pChevron) { pChevron.style.transform = "rotate(0deg)"; }
+        }
+      });
+    }
+    if (panelEl.classList.contains("panel-open")) {
+      panelEl.classList.remove("panel-open");
+      expandEl.style.maxHeight = "0";
+      expandEl.style.opacity = "0";
+      if (chevron) { chevron.style.transform = "rotate(0deg)"; }
+    } else {
+      panelEl.classList.add("panel-open");
+      expandEl.style.maxHeight = expandEl.scrollHeight + "px";
+      expandEl.style.opacity = "1";
+      scrollPanelIntoView(expandEl);
+      if (chevron) { chevron.style.transform = "rotate(180deg)"; }
+    }
+  }
+
+  window.toggleModelPanel = function(panel) {
+    var expandEl = document.getElementById("expand-model-" + panel);
+    var rowEl = document.getElementById("model-row-" + panel);
+    if (!expandEl) return;
+    var chevron = document.getElementById("chevron-model-" + panel);
+    var panels = ["hw", "sw", "en"];
+    panels.forEach(function(p) {
+      if (p !== panel) {
+        var pExpand = document.getElementById("expand-model-" + p);
+        var pChevron = document.getElementById("chevron-model-" + p);
+        if (pExpand && pExpand.style.maxHeight !== "0px" && pExpand.style.maxHeight !== "0") {
+          pExpand.style.maxHeight = "0";
+          pExpand.style.opacity = "0";
+        }
+        if (pChevron) { pChevron.style.transform = "rotate(0deg)"; }
+      }
+    });
+    if (expandEl.style.maxHeight && expandEl.style.maxHeight !== "0px" && expandEl.style.maxHeight !== "0") {
+      expandEl.style.maxHeight = "0";
+      expandEl.style.opacity = "0";
+      if (chevron) { chevron.style.transform = "rotate(0deg)"; }
+    } else {
+      expandEl.style.maxHeight = expandEl.scrollHeight + "px";
+      expandEl.style.opacity = "1";
+      scrollPanelIntoView(expandEl);
+      if (chevron) { chevron.style.transform = "rotate(180deg)"; }
+    }
+  }
+
+  window.togglePartnerCard = function(card) {
+    if (window.innerWidth > 1024) return; // desktop shows all stats
+    var wasOpen = card.classList.contains('pc-open');
+    // Close all sibling cards
+    card.closest('.partner-grid').querySelectorAll('.partner-card.pc-open').forEach(function(c) {
+      c.classList.remove('pc-open');
+    });
+    if (!wasOpen) {
+      card.classList.add('pc-open');
+      scrollPanelIntoView(card);
+    }
+  }
+
+  window.toggleRoadmapPanel = function(panel) {
+    var expandEl = document.getElementById("expand-roadmap-" + panel);
+    if (!expandEl) return;
+    var chevron = document.getElementById("chevron-roadmap-" + panel);
+    var isOpen = expandEl.style.maxHeight && expandEl.style.maxHeight !== "0px" && expandEl.style.maxHeight !== "0";
+
+    // Close sibling panel (tech <-> emerging are siblings)
+    var topLevel = ["tech", "emerging"];
+    if (topLevel.indexOf(panel) !== -1) {
+      topLevel.forEach(function(p) {
+        if (p === panel) return;
+        var pExpand = document.getElementById("expand-roadmap-" + p);
+        var pChevron = document.getElementById("chevron-roadmap-" + p);
+        if (pExpand && pExpand.style.maxHeight !== "0px" && pExpand.style.maxHeight !== "0") {
+          pExpand.style.maxHeight = "0";
+          pExpand.style.opacity = "0";
+        }
+        if (pChevron) { pChevron.style.transform = "rotate(0deg)"; }
+      });
+    }
+
+    if (isOpen) {
+      expandEl.style.maxHeight = "0";
+      expandEl.style.opacity = "0";
+      if (chevron) { chevron.style.transform = "rotate(0deg)"; }
+    } else {
+      expandEl.style.maxHeight = expandEl.scrollHeight + "px";
+      expandEl.style.opacity = "1";
+      scrollPanelIntoView(expandEl);
+      if (chevron) { chevron.style.transform = "rotate(180deg)"; }
+    }
+  }
+})();
+</script>
+
+<script>
+// Slide tracking — fire-and-forget beacons
+(function() {
+  var slides = document.querySelectorAll('.hero, .section, .act-divider, .cta-section');
+  var current = -1;
+  var debounce = null;
+
+  function getSlide() {
+    var mid = window.innerHeight / 2;
+    for (var i = slides.length - 1; i >= 0; i--) {
+      if (slides[i].getBoundingClientRect().top <= mid) return i;
+    }
+    return 0;
+  }
+
+  function track(idx, type) {
+    var d = JSON.stringify({ slide_index: idx, event_type: type });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/track', new Blob([d], { type: 'application/json' }));
+    }
+  }
+
+  function onScroll() {
+    clearTimeout(debounce);
+    debounce = setTimeout(function() {
+      var idx = getSlide();
+      if (idx !== current) {
+        current = idx;
+        track(current, 'view');
+      }
+    }, 300);
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Initial view
+  current = getSlide();
+  track(current, 'view');
+
+  // Heartbeat every 30s
+  setInterval(function() {
+    track(getSlide(), 'heartbeat');
+  }, 30000);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,24 @@
+sections:
+  - name: AMERICAN NAIL
+    slides:
+      - hero
+  - name: Mission
+    slides:
+      - mission
+  - name: Technology
+    slides:
+      - tech
+      - analysis
+  - name: Products
+    slides:
+      - products
+  - name: Intel
+    slides:
+      - intel
+  - name: Deploy
+    slides:
+      - deploy
+      - careers
+  - name: Close
+    slides:
+      - close

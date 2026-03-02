@@ -1,0 +1,16 @@
+{
+  "name": "pitch-deck",
+  "version": "1.0.0",
+  "description": "Build beautiful 16:9 pitch decks with magic link auth, analytics, and a data room. Deploy on Vercel.",
+  "author": { "name": "Sam D'Amico" },
+  "license": "MIT",
+  "keywords": [
+    "pitch-deck",
+    "slides",
+    "16:9",
+    "vercel",
+    "magic-link",
+    "analytics",
+    "data-room"
+  ]
+}

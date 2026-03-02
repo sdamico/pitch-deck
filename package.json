@@ -1,0 +1,14 @@
+{
+  "name": "pitch-deck",
+  "private": true,
+  "license": "MIT",
+  "description": "Full-stack pitch deck framework with magic link auth, session tracking, slide analytics, admin dashboard, and a 16:9 animated slide engine. Deploy on Vercel.",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && node dev-server.js"
+  },
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0",
+    "resend": "^4.0.0"
+  }
+}

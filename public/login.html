@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>AMERICAN NAIL — 2026</title>
+<style>
+  @font-face { font-family: 'Inter'; src: url('/fonts/Inter-Regular.woff2') format('woff2'); font-weight: 400; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('/fonts/JetBrainsMono-Latin.woff2') format('woff2'); font-weight: 300; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111111;
+    color: #ECEEE2;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .login-box {
+    width: 100%;
+    max-width: 360px;
+    padding: 0 24px;
+  }
+  .wordmark {
+    display: block;
+    margin: 0 auto 48px;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 36px;
+    letter-spacing: 0.1em;
+    color: #E85D2C;
+    opacity: 0.6;
+  }
+  label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(236,238,226,0.35);
+    margin-bottom: 12px;
+  }
+  input {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(236,238,226,0.1);
+    border-radius: 6px;
+    padding: 14px 16px;
+    color: #ECEEE2;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus {
+    border-color: rgba(232,93,44,0.5);
+  }
+  input::placeholder {
+    color: rgba(236,238,226,0.15);
+    letter-spacing: 0;
+  }
+  button {
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px;
+    background: rgba(232,93,44,0.12);
+    border: 1px solid rgba(232,93,44,0.3);
+    border-radius: 6px;
+    color: #E85D2C;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  button:hover {
+    background: rgba(232,93,44,0.2);
+    border-color: rgba(232,93,44,0.5);
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .error {
+    margin-top: 16px;
+    font-size: 13px;
+    color: rgba(239,68,68,0.8);
+    text-align: center;
+    display: none;
+  }
+  .success {
+    display: none;
+    text-align: center;
+  }
+  .success .icon {
+    font-size: 32px;
+    margin-bottom: 20px;
+    color: #E85D2C;
+  }
+  .success h2 {
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    margin-bottom: 12px;
+    color: #ECEEE2;
+  }
+  .success p {
+    font-size: 14px;
+    color: rgba(236,238,226,0.5);
+    line-height: 1.6;
+  }
+  .success .email-highlight {
+    color: #E85D2C;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  .success .retry {
+    margin-top: 24px;
+    font-size: 13px;
+    color: rgba(236,238,226,0.3);
+  }
+  .success .retry a {
+    color: rgba(232,93,44,0.7);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .success .retry a:hover {
+    color: #E85D2C;
+  }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="wordmark">AMERICAN NAIL</div>
+
+  <form id="form">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="email" autofocus>
+    <button type="submit" id="btn">Continue</button>
+    <div class="error" id="err"></div>
+  </form>
+
+  <div class="success" id="success">
+    <div class="icon">&#x2709;</div>
+    <h2>Check your email</h2>
+    <p>We sent a login link to<br><span class="email-highlight" id="sent-email"></span></p>
+    <div class="retry">
+      <a id="retry-link">Try a different email</a>
+    </div>
+  </div>
+</div>
+<script>
+const form = document.getElementById('form');
+const success = document.getElementById('success');
+const emailInput = document.getElementById('email');
+const btn = document.getElementById('btn');
+const err = document.getElementById('err');
+const nextParam = new URLSearchParams(window.location.search).get('next');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'SENDING...';
+
+  try {
+    const payload = { email: emailInput.value.trim() };
+    if (nextParam) payload.next = nextParam;
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      form.style.display = 'none';
+      success.style.display = 'block';
+      document.getElementById('sent-email').textContent = emailInput.value.trim();
+    } else {
+      err.textContent = data.error || 'Something went wrong';
+      err.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'CONTINUE';
+    }
+  } catch {
+    err.textContent = 'Network error — try again';
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'CONTINUE';
+  }
+});
+
+document.getElementById('retry-link').addEventListener('click', () => {
+  success.style.display = 'none';
+  form.style.display = 'block';
+  emailInput.value = '';
+  emailInput.focus();
+  btn.disabled = false;
+  btn.textContent = 'CONTINUE';
+});
+</script>
+</body>
+</html>
