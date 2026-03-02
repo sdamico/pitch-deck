@@ -56,6 +56,39 @@ async function isAdminAuthed(req) {
   return false;
 }
 
+/** Resolve authenticated admin email when available (null for password-only sessions). */
+async function getAuthedAdminEmail(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+
+  // Prefer DB-backed admin session email that still maps to an admin account
+  const token = cookies['admin-auth'];
+  if (token) {
+    const { rows } = await sql`
+      SELECT a.email
+      FROM admin_sessions s
+      INNER JOIN admins a ON LOWER(s.email) = LOWER(a.email)
+      WHERE s.id = ${token} AND s.expires_at > NOW()
+      LIMIT 1
+    `;
+    if (rows.length > 0) return rows[0].email;
+  }
+
+  // Fallback to viewer session if it belongs to an admin account
+  const sessionId = cookies['site-auth'];
+  if (sessionId) {
+    const { rows } = await sql`
+      SELECT s.email
+      FROM sessions s
+      INNER JOIN admins a ON LOWER(s.email) = LOWER(a.email)
+      WHERE s.id = ${sessionId} AND s.created_at > NOW() - INTERVAL '7 days'
+      LIMIT 1
+    `;
+    if (rows.length > 0) return rows[0].email;
+  }
+
+  return null;
+}
+
 /** Check if an email is an admin */
 async function isAdmin(email) {
   const { rows } = await sql`
@@ -82,4 +115,12 @@ function parseBody(req) {
   });
 }
 
-module.exports = { isAdminAuthed, isAdmin, checkPassword, createAdminSession, deleteAdminSession, parseBody };
+module.exports = {
+  isAdminAuthed,
+  getAuthedAdminEmail,
+  isAdmin,
+  checkPassword,
+  createAdminSession,
+  deleteAdminSession,
+  parseBody,
+};
