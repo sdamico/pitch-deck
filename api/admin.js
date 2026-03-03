@@ -65,7 +65,6 @@ module.exports = async (req, res) => {
           SELECT id FROM magic_tokens
           WHERE email = ${email}
             AND created_at > NOW() - INTERVAL '60 seconds'
-            AND used_at IS NULL
         `;
 
         if (recent.length === 0) {
