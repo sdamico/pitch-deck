@@ -97,12 +97,30 @@ module.exports = async (req, res) => {
   // Decode base64 to binary and serve
   const buffer = Buffer.from(file.content_b64 || '', 'base64');
   const preview = url.searchParams.get('preview') === '1';
-  const disposition = preview ? 'inline' : `attachment; filename="${encodeURIComponent(file.name)}"`;
-  res.writeHead(200, {
-    'Content-Type': file.mime_type || 'application/octet-stream',
+
+  // Only allow inline preview for safe (non-executable) MIME types.
+  // Active content types (HTML, SVG, XML) can execute scripts when served inline.
+  const SAFE_INLINE_TYPES = [
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
+    'text/plain',
+    'audio/', 'video/',
+  ];
+  const mimeType = file.mime_type || 'application/octet-stream';
+  const safeForInline = SAFE_INLINE_TYPES.some(t => mimeType === t || (t.endsWith('/') && mimeType.startsWith(t)));
+  const useInline = preview && safeForInline;
+  const disposition = useInline ? 'inline' : `attachment; filename="${encodeURIComponent(file.name)}"`;
+
+  const headers = {
+    'Content-Type': mimeType,
     'Content-Length': buffer.length,
     'Content-Disposition': disposition,
     'Cache-Control': 'no-store',
-  });
+  };
+  // Defense-in-depth: sandbox inline previews to block script execution
+  if (useInline) {
+    headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:";
+  }
+  res.writeHead(200, headers);
   res.end(buffer);
 };
