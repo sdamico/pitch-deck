@@ -3,6 +3,12 @@ const { join } = require('path');
 const { getSession } = require('./_lib/auth');
 
 module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+
   const session = await getSession(req);
 
   if (!session) {
