@@ -15,31 +15,32 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Check data room access and capture view_id / full_access flag
-  let viewId = null;
-  let fullAccess = false;
-  let isAdmin = false;
-
-  const { rows: access } = await sql`
-    SELECT id, view_id, full_access FROM data_room_access
-    WHERE LOWER(email) = LOWER(${session.email})
-       OR (email LIKE '@%' AND LOWER(${session.email}) LIKE '%' || LOWER(email))
-    ORDER BY CASE WHEN email LIKE '@%' THEN 1 ELSE 0 END
+  // Resolve admin status first so admin bypass is not affected by data_room_access rows.
+  const { rows: admin } = await sql`
+    SELECT id FROM admins WHERE LOWER(email) = LOWER(${session.email})
     LIMIT 1
   `;
-  if (access.length > 0) {
-    viewId = access[0].view_id;
-    fullAccess = access[0].full_access === true;
-  } else {
-    const { rows: admin } = await sql`
-      SELECT id FROM admins WHERE LOWER(email) = LOWER(${session.email})
+  const isAdmin = admin.length > 0;
+
+  // For non-admins, enforce data room access and capture view_id / full_access flag.
+  let viewId = null;
+  let fullAccess = false;
+
+  if (!isAdmin) {
+    const { rows: access } = await sql`
+      SELECT id, view_id, full_access FROM data_room_access
+      WHERE LOWER(email) = LOWER(${session.email})
+         OR (email LIKE '@%' AND LOWER(${session.email}) LIKE '%' || LOWER(email))
+      ORDER BY CASE WHEN email LIKE '@%' THEN 1 ELSE 0 END
+      LIMIT 1
     `;
-    if (admin.length === 0) {
+    if (access.length === 0) {
       res.writeHead(403);
       res.end();
       return;
     }
-    isAdmin = true;
+    viewId = access[0].view_id;
+    fullAccess = access[0].full_access === true;
   }
 
   const url = new URL(req.url, `http://${req.headers.host}`);
