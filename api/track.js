@@ -76,8 +76,8 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // Bounds check: slide_index must be between 0 and 99
-    if (slideIndex < 0 || slideIndex > 99) {
+    // Bounds check: slide_index must be non-negative
+    if (slideIndex < 0) {
       res.writeHead(400);
       res.end();
       return;
