@@ -2,7 +2,8 @@
 CREATE TABLE IF NOT EXISTS invite_links (
   id SERIAL PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
-  view_id INTEGER REFERENCES views(id) ON DELETE SET NULL,  -- null = full data room access
+  -- FK is added in migration 012 after views schema is guaranteed to exist.
+  view_id INTEGER,  -- null = full data room access
   label TEXT,               -- admin note, e.g. "Series B investors"
   created_by TEXT,
   expires_at TIMESTAMPTZ,   -- optional expiration
