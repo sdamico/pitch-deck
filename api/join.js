@@ -90,45 +90,70 @@ module.exports = async (req, res) => {
     }
 
     const link = links[0];
+    let token = null;
 
     // Generate magic token
-    const token = randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    try {
+      token = randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
-    await sql`
-      INSERT INTO magic_tokens (email, token, expires_at)
-      VALUES (${email}, ${token}, ${expiresAt.toISOString()})
-    `;
+      await sql`
+        INSERT INTO magic_tokens (email, token, expires_at)
+        VALUES (${email}, ${token}, ${expiresAt.toISOString()})
+      `;
 
-    // Send magic link email
-    // siteUrl imported from config
-    const verifyUrl = `${siteUrl}/api/verify?token=${token}&invite=${encodeURIComponent(code)}`;
+      // Send magic link email
+      // siteUrl imported from config
+      const verifyUrl = `${siteUrl}/api/verify?token=${token}&invite=${encodeURIComponent(code)}`;
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
-      from: resendFrom,
-      to: email,
-      subject: 'Your deck link',
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 460px; margin: 0 auto; padding: 40px 0;">
-          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-            Click below to view the pitch deck:
-          </p>
-          <a href="${verifyUrl}" style="display: inline-block; background: #E85D2C; color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
-            Open deck
-          </a>
-          <p style="color: #999; font-size: 13px; margin-top: 32px; line-height: 1.5;">
-            Or copy and paste this link into your browser:
-          </p>
-          <p style="background: #f5f5f5; border-radius: 4px; padding: 12px; word-break: break-all; font-family: monospace; font-size: 13px; color: #333; margin: 0 0 32px 0; user-select: all; -webkit-user-select: all;">
-            ${verifyUrl}
-          </p>
-          <p style="color: #999; font-size: 13px; margin-top: 0; line-height: 1.5;">
-            This link expires in 15 minutes. If you didn't request this, you can ignore this email.
-          </p>
-        </div>
-      `,
-    });
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from: resendFrom,
+        to: email,
+        subject: 'Your deck link',
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 460px; margin: 0 auto; padding: 40px 0;">
+            <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+              Click below to view the pitch deck:
+            </p>
+            <a href="${verifyUrl}" style="display: inline-block; background: #E85D2C; color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
+              Open deck
+            </a>
+            <p style="color: #999; font-size: 13px; margin-top: 32px; line-height: 1.5;">
+              Or copy and paste this link into your browser:
+            </p>
+            <p style="background: #f5f5f5; border-radius: 4px; padding: 12px; word-break: break-all; font-family: monospace; font-size: 13px; color: #333; margin: 0 0 32px 0; user-select: all; -webkit-user-select: all;">
+              ${verifyUrl}
+            </p>
+            <p style="color: #999; font-size: 13px; margin-top: 0; line-height: 1.5;">
+              This link expires in 15 minutes. If you didn't request this, you can ignore this email.
+            </p>
+          </div>
+        `,
+      });
+    } catch (issueErr) {
+      // Compensate invite consumption when token issuance or email delivery fails.
+      if (token) {
+        try {
+          await sql`
+            DELETE FROM magic_tokens
+            WHERE token = ${token}
+          `;
+        } catch (cleanupErr) {
+          console.error('Join rollback token cleanup failed:', cleanupErr);
+        }
+      }
+      try {
+        await sql`
+          UPDATE invite_links
+          SET use_count = GREATEST(use_count - 1, 0)
+          WHERE id = ${link.id}
+        `;
+      } catch (rollbackErr) {
+        console.error('Join rollback use_count decrement failed:', rollbackErr);
+      }
+      throw issueErr;
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
