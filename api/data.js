@@ -4,6 +4,12 @@ const { getSession } = require('./_lib/auth');
 const { sql } = require('./_lib/db');
 
 module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+
   const session = await getSession(req);
 
   if (!session) {
