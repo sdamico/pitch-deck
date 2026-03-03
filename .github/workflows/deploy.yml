@@ -33,6 +33,9 @@ jobs:
             echo "${{ secrets.ADMIN_PASSWORD }}" | vercel env add ADMIN_PASSWORD production --token=${{ secrets.VERCEL_TOKEN }} --force 2>/dev/null || true
           fi
 
+      - name: Refresh Vercel environment after secret sync
+        run: vercel pull --yes --environment=${{ github.event_name == 'push' && 'production' || 'preview' }} --token=${{ secrets.VERCEL_TOKEN }}
+
       - name: Build
         run: vercel build ${{ github.event_name == 'push' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
 
