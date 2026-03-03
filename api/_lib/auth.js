@@ -21,12 +21,18 @@ async function getSession(req) {
   const { rows } = await sql`
     SELECT id, email, created_at, last_seen
     FROM sessions
-    WHERE id = ${sessionId} AND created_at > NOW() - INTERVAL '7 days'
+    WHERE id = ${sessionId}
+      AND revoked_at IS NULL
+      AND created_at > NOW() - INTERVAL '7 days'
   `;
   if (rows.length === 0) return null;
 
   // Update last_seen
-  await sql`UPDATE sessions SET last_seen = NOW() WHERE id = ${sessionId}`;
+  await sql`
+    UPDATE sessions
+    SET last_seen = NOW()
+    WHERE id = ${sessionId} AND revoked_at IS NULL
+  `;
 
   return rows[0];
 }
