@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
     // F9: Global rate limit — max 20 magic links per minute across all users
     const { rows: globalRate } = await sql`
       SELECT COUNT(*) AS cnt FROM magic_tokens
-      WHERE created_at > NOW() - INTERVAL '1 minute' AND used_at IS NULL
+      WHERE created_at > NOW() - INTERVAL '1 minute'
     `;
     if (parseInt(globalRate[0].cnt) >= 20) {
       // Still return 200 to prevent enumeration
@@ -60,7 +60,6 @@ module.exports = async (req, res) => {
         SELECT id FROM magic_tokens
         WHERE email = ${email}
           AND created_at > NOW() - INTERVAL '60 seconds'
-          AND used_at IS NULL
       `;
       rateLimited = recent.length > 0;
     }
