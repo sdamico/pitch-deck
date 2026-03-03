@@ -3,6 +3,21 @@ const { sql } = require('../_lib/db');
 const { isAdminAuthed } = require('../_lib/admin-auth');
 const { siteUrl } = require('../_lib/config');
 
+function parsePositiveIntegerStrict(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 module.exports = async (req, res) => {
   if (!(await isAdminAuthed(req))) {
     res.writeHead(401);
@@ -48,12 +63,12 @@ module.exports = async (req, res) => {
 
     const code = randomBytes(16).toString('hex');
     const label = (data.label || '').trim() || null;
-    const viewId = data.view_id != null ? parseInt(data.view_id) : null;
+    const viewId = data.view_id != null ? parsePositiveIntegerStrict(data.view_id) : null;
     const grantDr = data.grant_dr === true; // default false — require explicit opt-in to avoid unscoped data room grants
     const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-    const maxUses = data.max_uses != null ? parseInt(data.max_uses) : null;
+    const maxUses = data.max_uses != null ? parsePositiveIntegerStrict(data.max_uses) : null;
 
-    if (viewId !== null && (isNaN(viewId) || viewId <= 0)) {
+    if (data.view_id != null && viewId === null) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid view_id' }));
       return;
@@ -63,7 +78,7 @@ module.exports = async (req, res) => {
       res.end(JSON.stringify({ error: 'Invalid expires_at' }));
       return;
     }
-    if (maxUses !== null && (isNaN(maxUses) || maxUses <= 0)) {
+    if (data.max_uses != null && maxUses === null) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'max_uses must be a positive number' }));
       return;
@@ -86,8 +101,9 @@ module.exports = async (req, res) => {
 
   // DELETE — remove invite link
   if (req.method === 'DELETE') {
-    const id = parseInt(url.searchParams.get('id'));
-    if (isNaN(id) || id <= 0) {
+    const idParam = url.searchParams.get('id');
+    const id = parsePositiveIntegerStrict(idParam);
+    if (id === null) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Valid id required' }));
       return;
