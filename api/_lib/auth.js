@@ -21,7 +21,9 @@ async function getSession(req) {
   const { rows } = await sql`
     SELECT id, email, created_at, last_seen
     FROM sessions
-    WHERE id = ${sessionId} AND created_at > NOW() - INTERVAL '7 days'
+    WHERE id = ${sessionId}
+      AND created_at > NOW() - INTERVAL '7 days'
+      AND last_seen >= created_at
   `;
   if (rows.length === 0) return null;
 

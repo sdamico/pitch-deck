@@ -12,10 +12,14 @@ module.exports = async (req, res) => {
 
   const cookies = parseCookies(req.headers.cookie || '');
 
-  // Delete viewer session from DB before clearing cookie
+  // Revoke viewer session without deleting the row so FK-linked analytics remain intact.
   const sessionId = cookies['site-auth'];
   if (sessionId) {
-    await sql`DELETE FROM sessions WHERE id = ${sessionId}`;
+    await sql`
+      UPDATE sessions
+      SET last_seen = created_at - INTERVAL '1 second'
+      WHERE id = ${sessionId}
+    `;
   }
 
   // Delete admin session from DB before clearing cookie
