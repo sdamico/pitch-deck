@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
       GROUP BY session_id
     )
     SELECT
-      s.id,
+      md5(s.id) AS id,
       s.email,
       s.ip,
       s.created_at,
