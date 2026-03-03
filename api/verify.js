@@ -14,6 +14,9 @@ module.exports = async (req, res) => {
     return;
   }
 
+  let consumedTokenId = null;
+  let sessionId = null;
+
   try {
     // Atomically find and consume valid, unused, non-expired token (prevents TOCTOU race)
     const { rows } = await sql`
@@ -30,10 +33,11 @@ module.exports = async (req, res) => {
       return;
     }
 
+    consumedTokenId = rows[0].id;
     const { email } = rows[0];
 
     // Create session
-    const sessionId = randomBytes(32).toString('hex');
+    sessionId = randomBytes(32).toString('hex');
     const rawIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
     const ip = rawIp.substring(0, 45); // Max IPv6 length
     const userAgent = (req.headers['user-agent'] || '').substring(0, 512);
@@ -101,6 +105,27 @@ module.exports = async (req, res) => {
     res.end();
   } catch (e) {
     console.error('Verify error:', e);
+
+    // Best-effort compensation: avoid burning the magic link on downstream failures.
+    if (sessionId) {
+      try {
+        await sql`DELETE FROM sessions WHERE id = ${sessionId}`;
+      } catch (cleanupErr) {
+        console.error('Verify cleanup (session delete) error:', cleanupErr);
+      }
+    }
+    if (consumedTokenId) {
+      try {
+        await sql`
+          UPDATE magic_tokens
+          SET used_at = NULL
+          WHERE id = ${consumedTokenId}
+        `;
+      } catch (cleanupErr) {
+        console.error('Verify cleanup (token reset) error:', cleanupErr);
+      }
+    }
+
     res.writeHead(302, { Location: '/login.html' });
     res.end();
   }
