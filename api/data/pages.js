@@ -10,16 +10,15 @@ module.exports = async (req, res) => {
 
   const session = await getSession(req);
   if (!session) {
-    const slug = new URL(req.url, `http://${req.headers.host}`).searchParams.get('slug');
-    const next = slug ? `/data/pages/${encodeURIComponent(slug)}` : '/data';
+    const path = new URL(req.url, `http://${req.headers.host}`).searchParams.get('path');
+    const next = path ? `/data/pages/${path}` : '/data';
     res.writeHead(302, { Location: `/login.html?next=${encodeURIComponent(next)}` });
     res.end();
     return;
   }
 
-  // Check data room access and capture view_id / full_access flag
+  // Check data room access and capture view_id
   let viewId = null;
-  let fullAccess = false;
   let isAdmin = false;
 
   const { rows: access } = await sql`
@@ -29,6 +28,7 @@ module.exports = async (req, res) => {
     ORDER BY CASE WHEN email LIKE '@%' THEN 1 ELSE 0 END
     LIMIT 1
   `;
+  let fullAccess = false;
   if (access.length > 0) {
     viewId = access[0].view_id;
     fullAccess = access[0].full_access === true;
@@ -45,39 +45,46 @@ module.exports = async (req, res) => {
   }
 
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const slug = url.searchParams.get('slug');
-  const asset = url.searchParams.get('asset');
+  const rawPath = url.searchParams.get('path');
 
-  if (!slug) {
+  if (!rawPath) {
     res.writeHead(400);
     res.end();
     return;
   }
 
-  // Look up the page entry point
-  const { rows: pages } = await sql`
-    SELECT id, name, encode(content, 'base64') AS content_b64, mime_type
+  // Resolve slug vs asset with a single query: find the page whose slug is the
+  // longest prefix of the path. The remainder (if any) is the asset path.
+  // e.g. "financials/market-sizing/fonts/foo.woff2"
+  //   -> slug = "financials/market-sizing", asset = "fonts/foo.woff2"
+  const { rows: matches } = await sql`
+    SELECT id, name, slug, encode(content, 'base64') AS content_b64, mime_type
     FROM data_room_files
-    WHERE slug = ${slug} AND type = 'page'
+    WHERE type = 'page'
+      AND (${rawPath} = slug OR ${rawPath} LIKE slug || '/%')
+    ORDER BY LENGTH(slug) DESC
+    LIMIT 1
   `;
 
-  if (pages.length === 0) {
+  const page = matches[0] || null;
+  const slug = page ? page.slug : null;
+  const asset = page && rawPath.length > page.slug.length
+    ? rawPath.slice(page.slug.length + 1)
+    : null;
+
+  if (!page) {
     res.writeHead(404);
     res.end('Page not found');
     return;
   }
 
-  const page = pages[0];
-
-  // View-based access check: null view_id with no full_access flag means no access (not full access)
-  if (!isAdmin && !fullAccess) {
-    if (!viewId) {
-      // No explicit view scope and no full_access — deny
-      res.writeHead(403);
-      res.end();
-      return;
-    }
-    // View-scoped check: page must be in the view
+  // View-based access check: page must be in the view
+  if (!isAdmin && !fullAccess && !viewId) {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+  if (!isAdmin && !fullAccess && viewId) {
     const { rows: allowed } = await sql`
       SELECT 1 FROM view_files WHERE view_id = ${viewId} AND file_id = ${page.id}
     `;
@@ -115,7 +122,7 @@ module.exports = async (req, res) => {
 
   // Serve page HTML — inject <base> tag so relative asset paths resolve correctly
   let html = Buffer.from(page.content_b64 || '', 'base64').toString('utf8');
-  const baseTag = `<base href="/data/pages/${encodeURIComponent(slug)}/">`;
+  const baseTag = `<base href="/data/pages/${slug.split('/').map(encodeURIComponent).join('/')}/">`;
   // Insert after <head> if present, otherwise prepend
   if (html.includes('<head>')) {
     html = html.replace('<head>', '<head>' + baseTag);

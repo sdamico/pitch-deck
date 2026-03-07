@@ -19,8 +19,7 @@
     }
   },
   "rewrites": [
-    { "source": "/data/pages/:slug/:path*", "destination": "/api/data/pages?slug=:slug&asset=:path*" },
-    { "source": "/data/pages/:slug", "destination": "/api/data/pages?slug=:slug" },
+    { "source": "/data/pages/:path*", "destination": "/api/data/pages?path=:path*" },
     { "source": "/admin", "destination": "/api/admin" },
     { "source": "/data", "destination": "/api/data" },
     { "source": "/", "destination": "/api/page" }
