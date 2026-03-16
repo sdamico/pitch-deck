@@ -1,6 +1,13 @@
 const { sql } = require('../_lib/db');
 const { isAdminAuthed, parseBody } = require('../_lib/admin-auth');
 
+function parseOptionalBoolean(value) {
+  if (value == null || value === '') return null;
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return undefined;
+}
+
 module.exports = async (req, res) => {
   if (!(await isAdminAuthed(req))) {
     res.writeHead(401);
@@ -19,6 +26,7 @@ module.exports = async (req, res) => {
         SELECT e.email,
           CASE WHEN dra.id IS NOT NULL THEN true ELSE false END AS has_access,
           dra.view_id,
+          dra.full_access,
           v.name AS view_name
         FROM (
           SELECT DISTINCT LOWER(email) AS email FROM sessions
@@ -37,7 +45,7 @@ module.exports = async (req, res) => {
     }
 
     const { rows } = await sql`
-      SELECT dra.id, dra.email, dra.granted_by, dra.created_at, dra.view_id, v.name AS view_name
+      SELECT dra.id, dra.email, dra.granted_by, dra.created_at, dra.view_id, dra.full_access, v.name AS view_name
       FROM data_room_access dra
       LEFT JOIN views v ON v.id = dra.view_id
       ORDER BY dra.created_at DESC
@@ -60,13 +68,42 @@ module.exports = async (req, res) => {
 
     const grantedBy = data.granted_by || null;
     const viewId = data.view_id != null ? parseInt(data.view_id) : null;
+    const fullAccessInput = parseOptionalBoolean(data.full_access);
 
-    const { rows } = await sql`
-      INSERT INTO data_room_access (email, granted_by, view_id)
-      VALUES (${email}, ${grantedBy}, ${viewId})
-      ON CONFLICT (email) DO UPDATE SET view_id = ${viewId}
-      RETURNING id, email, granted_by, created_at, view_id
-    `;
+    if (data.view_id != null && !Number.isInteger(viewId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid view_id' }));
+      return;
+    }
+    if (fullAccessInput === undefined) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid full_access' }));
+      return;
+    }
+
+    let rows;
+    if (fullAccessInput == null && viewId == null) {
+      // Preserve existing full_access state when caller doesn't specify either field.
+      const result = await sql`
+        INSERT INTO data_room_access (email, granted_by, view_id, full_access)
+        VALUES (${email}, ${grantedBy}, ${viewId}, false)
+        ON CONFLICT (email) DO UPDATE
+          SET view_id = ${viewId}
+        RETURNING id, email, granted_by, created_at, view_id, full_access
+      `;
+      rows = result.rows;
+    } else {
+      // Default when scoping to a view is to clear full-access unless explicitly provided.
+      const fullAccess = fullAccessInput == null ? false : fullAccessInput;
+      const result = await sql`
+        INSERT INTO data_room_access (email, granted_by, view_id, full_access)
+        VALUES (${email}, ${grantedBy}, ${viewId}, ${fullAccess})
+        ON CONFLICT (email) DO UPDATE
+          SET view_id = ${viewId}, full_access = ${fullAccess}
+        RETURNING id, email, granted_by, created_at, view_id, full_access
+      `;
+      rows = result.rows;
+    }
 
     res.writeHead(rows.length > 0 ? 200 : 201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(rows[0]));
@@ -85,13 +122,46 @@ module.exports = async (req, res) => {
     }
 
     const viewId = data.view_id != null ? parseInt(data.view_id) : null;
+    const fullAccessInput = parseOptionalBoolean(data.full_access);
 
-    const { rows } = await sql`
-      UPDATE data_room_access
-      SET view_id = ${viewId}
-      WHERE LOWER(email) = LOWER(${email})
-      RETURNING id, email, view_id
-    `;
+    if (data.view_id != null && !Number.isInteger(viewId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid view_id' }));
+      return;
+    }
+    if (fullAccessInput === undefined) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid full_access' }));
+      return;
+    }
+
+    let rows;
+    if (fullAccessInput != null) {
+      const result = await sql`
+        UPDATE data_room_access
+        SET view_id = ${viewId}, full_access = ${fullAccessInput}
+        WHERE LOWER(email) = LOWER(${email})
+        RETURNING id, email, view_id, full_access
+      `;
+      rows = result.rows;
+    } else if (viewId != null) {
+      // Setting a scoped view with no explicit full_access should remove broad access.
+      const result = await sql`
+        UPDATE data_room_access
+        SET view_id = ${viewId}, full_access = false
+        WHERE LOWER(email) = LOWER(${email})
+        RETURNING id, email, view_id, full_access
+      `;
+      rows = result.rows;
+    } else {
+      const result = await sql`
+        UPDATE data_room_access
+        SET view_id = ${viewId}
+        WHERE LOWER(email) = LOWER(${email})
+        RETURNING id, email, view_id, full_access
+      `;
+      rows = result.rows;
+    }
 
     if (rows.length === 0) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
