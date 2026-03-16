@@ -19,6 +19,7 @@ module.exports = async (req, res) => {
         SELECT e.email,
           CASE WHEN dra.id IS NOT NULL THEN true ELSE false END AS has_access,
           dra.view_id,
+          COALESCE(dra.full_access, false) AS full_access,
           v.name AS view_name
         FROM (
           SELECT DISTINCT LOWER(email) AS email FROM sessions
@@ -37,7 +38,7 @@ module.exports = async (req, res) => {
     }
 
     const { rows } = await sql`
-      SELECT dra.id, dra.email, dra.granted_by, dra.created_at, dra.view_id, v.name AS view_name
+      SELECT dra.id, dra.email, dra.granted_by, dra.created_at, dra.view_id, dra.full_access, v.name AS view_name
       FROM data_room_access dra
       LEFT JOIN views v ON v.id = dra.view_id
       ORDER BY dra.created_at DESC
@@ -60,12 +61,13 @@ module.exports = async (req, res) => {
 
     const grantedBy = data.granted_by || null;
     const viewId = data.view_id != null ? parseInt(data.view_id) : null;
+    const fullAccess = data.full_access === true;
 
     const { rows } = await sql`
-      INSERT INTO data_room_access (email, granted_by, view_id)
-      VALUES (${email}, ${grantedBy}, ${viewId})
-      ON CONFLICT (email) DO UPDATE SET view_id = ${viewId}
-      RETURNING id, email, granted_by, created_at, view_id
+      INSERT INTO data_room_access (email, granted_by, view_id, full_access)
+      VALUES (${email}, ${grantedBy}, ${viewId}, ${fullAccess})
+      ON CONFLICT (email) DO UPDATE SET view_id = ${viewId}, full_access = ${fullAccess}
+      RETURNING id, email, granted_by, created_at, view_id, full_access
     `;
 
     res.writeHead(rows.length > 0 ? 200 : 201, { 'Content-Type': 'application/json' });
@@ -85,12 +87,13 @@ module.exports = async (req, res) => {
     }
 
     const viewId = data.view_id != null ? parseInt(data.view_id) : null;
+    const fullAccess = data.full_access === true;
 
     const { rows } = await sql`
       UPDATE data_room_access
-      SET view_id = ${viewId}
+      SET view_id = ${viewId}, full_access = ${fullAccess}
       WHERE LOWER(email) = LOWER(${email})
-      RETURNING id, email, view_id
+      RETURNING id, email, view_id, full_access
     `;
 
     if (rows.length === 0) {
