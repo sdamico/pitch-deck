@@ -21,6 +21,10 @@ function sanitizeFilename(name) {
     .substring(0, 255);               // reasonable length limit
 }
 
+function isAllowedMimeType(mimeType) {
+  return ALLOWED_MIME_PREFIXES.some((prefix) => mimeType.startsWith(prefix));
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.writeHead(405);
@@ -89,15 +93,31 @@ module.exports = async (req, res) => {
 
       const safeName = filename ? sanitizeFilename(filename) : null;
 
+      if (!Number.isInteger(sizeBytes) || sizeBytes < 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid size' }));
+        return;
+      }
+
       if (sizeBytes > MAX_FILE_SIZE) {
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'File too large. Maximum size is 50MB.' }));
         return;
       }
 
+      if (!isAllowedMimeType(mimeType)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File type not allowed' }));
+        return;
+      }
+
       // If this is the entry HTML for a page, update the page row's content instead of inserting
       if (isEntry && pageId) {
-        await sql`UPDATE data_room_files SET content = ''::bytea, size_bytes = ${sizeBytes} WHERE id = ${pageId}`;
+        await sql`
+          UPDATE data_room_files
+          SET content = ''::bytea, size_bytes = ${sizeBytes}, mime_type = ${mimeType}
+          WHERE id = ${pageId}
+        `;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: pageId }));
         return;
@@ -129,7 +149,7 @@ module.exports = async (req, res) => {
       let tooLarge = false;
       for await (const chunk of req) {
         totalBytes += chunk.length;
-        if (totalBytes > MAX_FILE_SIZE) {
+        if (totalBytes > MAX_UPLOAD_BYTES) {
           tooLarge = true;
           req.socket?.destroy();
           break;
@@ -143,12 +163,29 @@ module.exports = async (req, res) => {
       }
       const chunkBase64 = Buffer.concat(chunks).toString('utf8');
 
-      // Append decoded binary to the bytea column
-      await sql`
+      // Append decoded binary only when final stored size stays within MAX_FILE_SIZE.
+      const { rows: updated } = await sql`
         UPDATE data_room_files
-        SET content = content || decode(${chunkBase64}, 'base64')
+        SET
+          content = content || decode(${chunkBase64}, 'base64'),
+          size_bytes = octet_length(content) + octet_length(decode(${chunkBase64}, 'base64'))
         WHERE id = ${id}
+          AND octet_length(content) + octet_length(decode(${chunkBase64}, 'base64')) <= ${MAX_FILE_SIZE}
+        RETURNING id
       `;
+      if (updated.length === 0) {
+        const { rows: existing } = await sql`
+          SELECT id FROM data_room_files WHERE id = ${id}
+        `;
+        if (existing.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'file not found' }));
+          return;
+        }
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File too large. Maximum size is 50MB.' }));
+        return;
+      }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -165,8 +202,10 @@ module.exports = async (req, res) => {
       }
 
       const { rows } = await sql`
-        SELECT id, name, folder, size_bytes, mime_type, uploaded_by, created_at
-        FROM data_room_files WHERE id = ${id}
+        UPDATE data_room_files
+        SET size_bytes = octet_length(content)
+        WHERE id = ${id}
+        RETURNING id, name, folder, size_bytes, mime_type, uploaded_by, created_at
       `;
 
       if (rows.length === 0) {
@@ -201,7 +240,7 @@ module.exports = async (req, res) => {
       let tooLarge = false;
       for await (const chunk of req) {
         totalBytes += chunk.length;
-        if (totalBytes > MAX_FILE_SIZE) {
+        if (totalBytes > MAX_UPLOAD_BYTES) {
           tooLarge = true;
           req.socket?.destroy();
           break;
@@ -218,7 +257,7 @@ module.exports = async (req, res) => {
       const sizeBytes = buffer.length;
       const mimeType = req.headers['content-type'] || 'application/octet-stream';
 
-      if (!ALLOWED_MIME_PREFIXES.some(p => mimeType.startsWith(p))) {
+      if (!isAllowedMimeType(mimeType)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'File type not allowed' }));
         return;

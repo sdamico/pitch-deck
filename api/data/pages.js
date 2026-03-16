@@ -114,7 +114,10 @@ module.exports = async (req, res) => {
     res.writeHead(200, {
       'Content-Type': file.mime_type || 'application/octet-stream',
       'Content-Length': buffer.length,
-      'Cache-Control': 'public, max-age=3600',
+      // Protected data-room assets must never be cacheable by shared/browser caches.
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     });
     res.end(buffer);
     return;
